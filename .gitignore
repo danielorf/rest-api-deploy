@@ -1,0 +1,10 @@
+# ignore pycharm .idea
+/.idea
+
+# ignore __pycache__
+**/__pycache__/
+*/__pycache__/
+.pyc
+
+# Mac OSX ds_store
+.DS_Store
