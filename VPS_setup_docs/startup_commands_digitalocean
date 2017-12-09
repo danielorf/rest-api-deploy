@@ -1,0 +1,113 @@
+# This set of instructions resulted in a WORKING instance on DigitalOcean
+
+pt-get update
+apt-get install postgresql postgresql-contrib
+sudo -i -u postgres
+exit
+
+
+adduser danielorf  # fill in password and other details
+visudo  # fill in details below
+    add "danielorf ALL=(ALL:ALL) ALL" in "# User privilege specification"
+vi /etc/ssh/sshd_config
+    Change "permit root login" to "no"
+    Add "AllowUsers danielorf" to the end of file
+service sshd reload
+exit
+ssh danielorf@107.170.218.129
+sudo su
+
+
+sudo -i -u postgres
+createuser danielorf -P  # fill in password
+createdb danielorf
+exit
+exit
+sudo vi /etc/postgresql/9.5/main/pg_hba.conf
+    # This is required for sqlalchemy to work
+    In "# "local" is for Unix domain socket connections only" change "peer" to "md5"
+
+
+sudo apt-get update
+sudo apt-get install nginx
+sudo ufw enable
+sudo ufw allow 'Nginx HTTP'
+sudo ufw allow ssh
+sudo ufw status
+systemctl status nginx  # also "systemctl start nginx" and "systemctl stop nginx" and "systemctl restart nginx"
+sudo vi /etc/nginx/sites-available/items-rest.conf  # fill in details below
+    server {
+    listen 80;
+    real_ip_header X-Forwarded-For;
+    set_real_ip_from 127.0.0.1;
+    server_name localhost;
+
+    location / {
+    include uwsgi_params;
+    uwsgi_pass unix:/var/www/html/items-rest/socket.sock;
+    uwsgi_modifier1 30;
+    }
+
+    error_page 404 /404.html;
+    location = /404.html {
+    root /usr/share/nging/html;
+    }
+
+    error_page 500 502 503 504 /50x.html;
+    location = /50x.html {
+    root /usr/share/nginx/html;
+    }
+    }
+sudo ln -s /etc/nginx/sites-available/items-rest.conf /etc/nginx/sites-enabled
+sudo mkdir /var/www/html/items-rest
+sudo chown danielorf:danielorf /var/www/html/items-rest
+cd /var/www/html/items-rest
+git clone https://github.com/danielorf/rest-api-deploy.git .
+mkdir log
+sudo apt-get install python-pip python3-dev libpq-dev  # may need to be python3-pip
+pip install virtualenv
+virtualenv venv --python=python3.5
+source venv/bin/activate
+pip install -r requirements.txt
+
+
+sudo vi /etc/systemd/system/uwsgi_items_rest.service  # fill in details below
+    [Unit]
+    Description=uWSGI items rest
+
+    [Service]
+    Environment=DATABASE_URL=postgres://danielorf:S&w1ches@localhost:5432/danielorf
+    ExecStart=/var/www/html/items-rest/venv/bin/uwsgi --master --emperor /var/www/html/items-rest/uwsgi.ini --die-on-term --uid danielorf --gid danielorf --logto /var/www/html/items-rest/log/emperor.log
+    Restart=always
+    KillSignal=SIGQUIT
+    Type=notify
+    NotifyAccess=all
+
+    [Install]
+    WantedBy=multi-user.target
+
+vi uwsgi.ini  # fill in details below
+# delete everything with -> d, Shift+g
+    [uwsgi]
+    base = /var/www/html/items-rest
+    app = run
+    module = %(app)
+
+    home = %(base)/venv
+    pythonpath = %(base)
+
+    socket = %(base)/socket.sock
+
+    chmod-socket = 777
+
+    processes = 8
+
+    threads = 8
+
+    harakiri = 15
+
+    callable = app
+
+    logto = /var/www/html/items-rest/log/%n.log
+
+sudo systemctl start uwsgi_items_rest
